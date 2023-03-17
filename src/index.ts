@@ -1,9 +1,10 @@
-import fs from 'fs'
+import fs, { read } from 'fs'
 import path from 'path'
 import { execa } from 'execa'
 import express from 'express'
+import { WriteStream } from 'fs-capacitor'
 import invariant from 'tiny-invariant'
-import { z } from 'zod'
+import { setErrorMap, z } from 'zod'
 
 const PORT = 4000
 
@@ -11,7 +12,9 @@ const app = express()
 
 // const url = 'https://www.youtube.com/watch?v=LlN8MPS7KQs'
 // const url = 'https://www.youtube.com/watch?v=xR3V5Ow2dTI'
-const url = 'https://www.youtube.com/watch?v=YRLw55eGMn8'
+// const url = 'https://www.youtube.com/watch?v=YRLw55eGMn8'
+const url = 'https://music.youtube.com/watch?v=Guq9Vl8dK30'
+// const url = 'https://www.youtube.com/watch?v=MB0O1NRNSVs'
 
 app.get('/', async (req, res) => {
   // Get stream link
@@ -54,11 +57,12 @@ app.get('/', async (req, res) => {
 
   // prettier-ignore
   const { stdout, stderr } = execa('ffmpeg', [
-    '-i',
-    format.url,
+    '-reconnect', "1", // Reconnect on ssl error
+    '-i', format.url,
     // '-re', // Read at native frame rate
     '-vn', // Disable video processing
     '-c:a', 'libopus', // Set audio codec
+    // '-c:a', 'copy', // Use existing codec
     // '-b:a', `${format.abr * 1_000}`,
     '-f', 'webm', // Set output format
     '-ss', "0", // Start time in seconds
@@ -67,16 +71,27 @@ app.get('/', async (req, res) => {
   ])
   invariant(stdout, 'ffmpeg stdout should be available')
   invariant(stderr, 'ffmpeg stderr should be available')
-  stderr.pipe(process.stderr)
+  // stderr.pipe(process.stderr)
 
+  const capacitor = new WriteStream()
+  const writeable = fs.createWriteStream('demo.webm')
+  const readable = capacitor.createReadStream()
+  const stream = capacitor.createReadStream()
+
+  // Pipe ffmpeg stream to capacitor
+  stdout.pipe(capacitor)
+
+  // Write ffmpeg stream to disk
+  readable.pipe(writeable)
+
+  // Stream ffmpeg to response
   res.writeHead(200, {
     'content-type': 'audio/webm',
     'transfer-encoding': 'chunked',
     // 'content-length': format.filesize,
     'accept-ranges': 'bytes',
   })
-
-  stdout.pipe(res)
+  stream.pipe(res)
 })
 
 app.listen(PORT, '0.0.0.0', () => {
